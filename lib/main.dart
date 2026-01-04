@@ -1,24 +1,24 @@
+
 import 'package:flutter/material.dart';
 import 'home_screen.dart';
 import 'add_transaction_screen.dart';
-import 'storage.dart';
 
 void main() {
-  runApp(SimpleWalletApp());
+  runApp(const SimpleWalletApp());
 }
 
 class SimpleWalletApp extends StatelessWidget {
+  const SimpleWalletApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'Simple Wallet',
-      theme: ThemeData(
-        primarySwatch: Colors.teal,
-      ),
       initialRoute: HomeScreen.routeName,
       routes: {
         HomeScreen.routeName: (_) => HomeScreen(),
-        AddTransactionScreen.routeName: (_) => AddTransactionScreen(),
+        AddTransactionScreen.routeName: (_) => const AddTransactionScreen(),
       },
     );
   }

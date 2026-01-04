@@ -1,52 +1,24 @@
 import 'package:flutter/material.dart';
 import 'transaction_model.dart';
-import 'storage.dart';
+import 'services/api_service.dart';
 
 class AddTransactionScreen extends StatefulWidget {
   static const routeName = '/add';
+
+  const AddTransactionScreen({super.key});
+
   @override
-  _AddTransactionScreenState createState() => _AddTransactionScreenState();
+  State<AddTransactionScreen> createState() => _AddTransactionScreenState();
 }
 
 class _AddTransactionScreenState extends State<AddTransactionScreen> {
   final _formKey = GlobalKey<FormState>();
   final _amountCtrl = TextEditingController();
+
   String _type = 'income';
   String _category = 'General';
   String _note = '';
   DateTime _date = DateTime.now();
-
-  void _pickDate() async {
-    final d = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
-    if (d != null) setState(() => _date = d);
-  }
-
-  void _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    _formKey.currentState!.save();
-    final amount = double.parse(_amountCtrl.text);
-
-    final tx = WalletTransaction(
-      id: DateTime.now().millisecondsSinceEpoch,
-      amount: amount,
-      type: _type,
-      category: _category,
-      note: _note,
-      date: _date,
-      // applied fields will be computed by Storage.addTransaction
-      appliedCash: 0.0,
-      appliedSaved: 0.0,
-      appliedDebt: 0.0,
-    );
-
-    await Storage.addTransaction(tx);
-    Navigator.of(context).pop();
-  }
 
   @override
   void dispose() {
@@ -54,82 +26,130 @@ class _AddTransactionScreenState extends State<AddTransactionScreen> {
     super.dispose();
   }
 
+  void _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+
+    if (picked != null) {
+      setState(() => _date = picked);
+    }
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    _formKey.currentState!.save();
+
+    final amount = double.parse(_amountCtrl.text);
+
+    final tx = WalletTransaction(
+      id: 0,
+      amount: amount,
+      type: _type,
+      category: _category,
+      note: _note,
+      date: _date,
+    );
+
+    await ApiService.addTransaction(tx);
+
+    final balances = await ApiService.getBalances();
+    double cash = balances['cash']!;
+
+    if (_type == 'income') {
+      cash += amount;
+    } else {
+      cash -= amount;
+    }
+
+    await ApiService.updateBalances(
+      cash: cash,
+      saved: balances['saved']!,
+      debt: balances['debt']!,
+    );
+
+    if (mounted) Navigator.pop(context);
+  }
+
+
   String formatDate(DateTime d) {
-    final y = d.year.toString().padLeft(4, '0');
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '$y-$m-$day';
+    return '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Add Transaction')),
+      appBar: AppBar(title: const Text('Add Transaction')),
       body: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(12),
         child: Form(
           key: _formKey,
-          child: Column(
+          child: ListView(
             children: [
-              // amount input as text field
               TextFormField(
                 controller: _amountCtrl,
-                decoration: InputDecoration(labelText: 'Amount', prefixText: '\$'),
-                keyboardType: TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Amount',
+                  prefixText: '\$',
+                ),
+                keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) return 'Enter amount';
+                  if (v == null || v.trim().isEmpty) {
+                    return 'Enter amount';
+                  }
                   final n = double.tryParse(v);
-                  if (n == null) return 'Enter valid number';
-                  if (n <= 0) return 'Amount must be positive';
+                  if (n == null || n <= 0) {
+                    return 'Enter valid number';
+                  }
                   return null;
                 },
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
 
-              // type and category
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      value: _type,
-                      onChanged: (v) => setState(() => _type = v!),
-                      items: [
-                        DropdownMenuItem(value: 'income', child: Text('Income')),
-                        DropdownMenuItem(value: 'expense', child: Text('Expense')),
-                      ],
-                      decoration: InputDecoration(labelText: 'Type'),
-                    ),
-                  ),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: TextFormField(
-                      initialValue: _category,
-                      decoration: InputDecoration(labelText: 'Category'),
-                      onSaved: (v) => _category = v ?? 'General',
-                    ),
-                  ),
+              DropdownButtonFormField<String>(
+                value: _type,
+                decoration: const InputDecoration(labelText: 'Type'),
+                items: const [
+                  DropdownMenuItem(value: 'income', child: Text('Income')),
+                  DropdownMenuItem(value: 'expense', child: Text('Expense')),
                 ],
+                onChanged: (v) => setState(() => _type = v!),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
 
-              // note
               TextFormField(
-                decoration: InputDecoration(labelText: 'Note'),
+                initialValue: _category,
+                decoration: const InputDecoration(labelText: 'Category'),
+                onSaved: (v) => _category = v ?? 'General',
+              ),
+              const SizedBox(height: 8),
+
+              TextFormField(
+                decoration: const InputDecoration(labelText: 'Note'),
                 onSaved: (v) => _note = v ?? '',
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 12),
 
-              // date shown
               Row(
                 children: [
                   Text('Date: ${formatDate(_date)}'),
-                  SizedBox(width: 12),
-                  TextButton(onPressed: _pickDate, child: Text('Pick')),
+                  const SizedBox(width: 12),
+                  TextButton(
+                    onPressed: _pickDate,
+                    child: const Text('Pick'),
+                  ),
                 ],
               ),
+              const SizedBox(height: 16),
 
-              SizedBox(height: 12),
-              ElevatedButton(onPressed: _save, child: Text('Save'))
+              ElevatedButton(
+                onPressed: _save,
+                child: const Text('Save'),
+              ),
             ],
           ),
         ),
